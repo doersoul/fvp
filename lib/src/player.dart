@@ -25,6 +25,7 @@ class Player {
 
   Player() {
     _pp.value = _player;
+
     _receivePort.listen((message) async {
       final type = message[0] as int;
       final rep = calloc<_CallbackReply>();
@@ -36,18 +37,20 @@ class Player {
             final category = message[2] as String;
             final detail = message[3] as String;
             final ev = MediaEvent(error, category, detail);
-            for (final cb in _eventCb) {
-              cb(ev);
-            }
+
+            _eventController.add(ev);
           }
         case 1:
           {
             // state
             final oldValue = message[1] as int;
             final newValue = message[2] as int;
-            for (final cb in _stateCb) {
-              cb(PlaybackState.from(oldValue), PlaybackState.from(newValue));
-            }
+
+            _stateController.add(PlaybackStateEvent(
+              PlaybackState.from(oldValue),
+              PlaybackState.from(newValue),
+            ));
+
             Libfvp.replyType(nativeHandle, type, nullptr);
           }
         case 2:
@@ -55,11 +58,13 @@ class Player {
             // media status
             final oldValue = message[1] as int;
             final newValue = message[2] as int;
-            bool ret = true;
-            for (var cb in _statusCb) {
-              ret = cb(MediaStatus(oldValue), MediaStatus(newValue)) && ret;
-            }
-            rep.ref.mediaStatus.ret = ret;
+
+            _statusController.add(MediaStatusEvent(
+              MediaStatus(oldValue),
+              MediaStatus(newValue),
+            ));
+
+            rep.ref.mediaStatus.ret = true;
             Libfvp.replyType(nativeHandle, type, rep.cast());
           }
         case 3:
@@ -116,45 +121,15 @@ class Player {
       }
       calloc.free(rep);
     });
+
     Libfvp.registerPort(nativeHandle, NativeApi.postCObject.cast(),
         _receivePort.sendPort.nativePort);
 
-    onStateChanged((oldValue, newValue) {
-      _state = newValue;
-    });
-    onMediaStatus((oldValue, newValue) {
-      if (!oldValue.test(MediaStatus.loaded) &&
-          newValue.test(MediaStatus.loaded)) {
-        _setVideoSize();
-      }
-      if (!oldValue.test(MediaStatus.loading) &&
-          newValue.test(MediaStatus.loading)) {
-        if (_videoSize.isCompleted) {
-          // updateTexture() may be awaiting and won't wake up if reset to a new object here
-          _videoSize = Completer<ui.Size?>();
-        }
-      }
-      if (oldValue.test(MediaStatus.loading) &&
-          newValue.test(MediaStatus.invalid | MediaStatus.stalled)) {
-        _videoSize.complete(null);
-      }
-      if (oldValue.test(MediaStatus.loaded) &&
-          !newValue.test(MediaStatus.loaded)) {
-// invalid mediaInfo when loaded(small probe size, bad format etc.), then failed to decode
-        if (!_videoSize.isCompleted) {
-          _videoSize.complete(null);
-        }
-      }
-      return true;
-    });
-    onEvent((e) {
-      if (_videoSize.isCompleted) {
-        return;
-      }
-      if (e.category == 'decoder.video') {
-        _setVideoSize();
-      }
-    });
+    _initStateListener();
+
+    _initStatusListener();
+
+    _initEventListener();
   }
 
   /// Release resources
@@ -167,9 +142,10 @@ class Player {
     await updateTexture(width: -1);
     state = PlaybackState.stopped;
     Libfvp.unregisterPort(nativeHandle);
-    onEvent(null);
-    onStateChanged(null);
-    onMediaStatus(null);
+
+    _disposeEventListener();
+    _disposeStateListener();
+    _disposeStatusListener();
 
     _receivePort.close();
 
@@ -368,6 +344,21 @@ class Player {
         _player.ref.object);
     return MediaInfo.from(_mediaInfoC);
   }
+
+  /// Set [MediaEvent] callback.
+  /// https://github.com/wang-bin/mdk-sdk/wiki/Player-APIs#player-oneventstdfunctionboolconst-mediaevent-cb-callbacktoken-token--nullptr
+  Stream<MediaEvent> get eventStream => _eventController.stream;
+
+  /// Set a [PlaybackState] change callback.
+  /// https://github.com/wang-bin/mdk-sdk/wiki/Player-APIs#player-onstatechangedstdfunctionvoidstate-cb
+  // reply: true to let native code wait for dart callback result
+  Stream<PlaybackStateEvent> get stateStream => _stateController.stream;
+
+  /// Add a [MediaStatus] callback or remove all callbacks.
+  /// https://github.com/wang-bin/mdk-sdk/wiki/Player-APIs#player-onmediastatusstdfunctionboolmediastatus-oldvalue-mediastatus-newvalue-cb-callbacktoken-token--nullptr
+  // reply: true to let native code wait for dart callback result, may result in dead lock because when native waiting main isolate reply, main isolate may execute another task(e.g. frequent seekTo) which also acquire the same lock in native
+  // only the last callback reply parameter works
+  Stream<MediaStatusEvent> get statusStream => _statusController.stream;
 
   /// Load the [media] from [position] in milliseconds and decode the first frame, then [state] will be [PlaybackState.paused].
   /// If error occurs, will be [PlaybackState.stopped].
@@ -672,49 +663,6 @@ class Player {
   }
   // callbacks
 
-  /// Set [MediaEvent] callback.
-  /// https://github.com/wang-bin/mdk-sdk/wiki/Player-APIs#player-oneventstdfunctionboolconst-mediaevent-cb-callbacktoken-token--nullptr
-  void onEvent(void Function(MediaEvent)? callback) {
-    if (callback == null) {
-      _eventCb.clear();
-      Libfvp.unregisterType(nativeHandle, 0);
-    } else {
-      _eventCb.add(callback);
-      Libfvp.registerType(nativeHandle, 0, false);
-    }
-  }
-
-  /// Set a [PlaybackState] change callback.
-  /// https://github.com/wang-bin/mdk-sdk/wiki/Player-APIs#player-onstatechangedstdfunctionvoidstate-cb
-// reply: true to let native code wait for dart callback result
-  void onStateChanged(
-      void Function(PlaybackState oldValue, PlaybackState newValue)? callback,
-      {bool reply = false}) {
-    if (callback == null) {
-      _stateCb.clear();
-      Libfvp.unregisterType(nativeHandle, 1);
-    } else {
-      _stateCb.add(callback);
-      Libfvp.registerType(nativeHandle, 1, reply);
-    }
-  }
-
-  /// Add a [MediaStatus] callback or remove all callbacks.
-  /// https://github.com/wang-bin/mdk-sdk/wiki/Player-APIs#player-onmediastatusstdfunctionboolmediastatus-oldvalue-mediastatus-newvalue-cb-callbacktoken-token--nullptr
-// reply: true to let native code wait for dart callback result, may result in dead lock because when native waiting main isolate reply, main isolate may execute another task(e.g. frequent seekTo) which also acquire the same lock in native
-// only the last callback reply parameter works
-  void onMediaStatus(
-      bool Function(MediaStatus oldValue, MediaStatus newValue)? callback,
-      {bool reply = false}) {
-    if (callback == null) {
-      _statusCb.clear();
-      Libfvp.unregisterType(nativeHandle, 2);
-    } else {
-      _statusCb.add(callback);
-      Libfvp.registerType(nativeHandle, 2, reply);
-    }
-  }
-
   void onSubtitleText(
       void Function(double start, double end, List<String> text)? callback) {
     _subtitleCb = callback;
@@ -723,6 +671,78 @@ class Player {
     } else {
       Libfvp.registerType(nativeHandle, 8, false);
     }
+  }
+
+  void _initEventListener() {
+    eventStream.listen((MediaEvent event) {
+      if (_videoSize.isCompleted) {
+        return;
+      }
+
+      if (event.category == 'decoder.video') {
+        _setVideoSize();
+      }
+    });
+
+    Libfvp.registerType(nativeHandle, 0, false);
+  }
+
+  void _disposeEventListener() {
+    _eventController.close();
+
+    Libfvp.unregisterType(nativeHandle, 0);
+  }
+
+  void _initStateListener() {
+    stateStream.listen((PlaybackStateEvent state) {
+      _state = state.newValue;
+    });
+
+    Libfvp.registerType(nativeHandle, 1, false);
+  }
+
+  void _disposeStateListener() {
+    _stateController.close();
+
+    Libfvp.unregisterType(nativeHandle, 1);
+  }
+
+  void _initStatusListener() {
+    statusStream.listen((MediaStatusEvent status) {
+      if (!status.oldValue.test(MediaStatus.loaded) &&
+          status.newValue.test(MediaStatus.loaded)) {
+        _setVideoSize();
+      }
+
+      if (!status.oldValue.test(MediaStatus.loading) &&
+          status.newValue.test(MediaStatus.loading)) {
+        if (_videoSize.isCompleted) {
+          // updateTexture() may be awaiting and won't wake up if reset to a new object here
+          _videoSize = Completer<ui.Size?>();
+        }
+      }
+
+      if (status.oldValue.test(MediaStatus.loading) &&
+          status.newValue.test(MediaStatus.invalid | MediaStatus.stalled)) {
+        _videoSize.complete(null);
+      }
+
+      if (status.oldValue.test(MediaStatus.loaded) &&
+          !status.newValue.test(MediaStatus.loaded)) {
+        // invalid mediaInfo when loaded(small probe size, bad format etc.), then failed to decode
+        if (!_videoSize.isCompleted) {
+          _videoSize.complete(null);
+        }
+      }
+    });
+
+    Libfvp.registerType(nativeHandle, 2, false);
+  }
+
+  void _disposeStatusListener() {
+    _statusController.close();
+
+    Libfvp.unregisterType(nativeHandle, 2);
   }
 
   void _setVideoSize() {
@@ -776,10 +796,10 @@ class Player {
   Completer<int>? _seeked;
   final _receivePort = ReceivePort();
 
-  final _eventCb = <Function(MediaEvent)>[];
-  final _stateCb = <Function(PlaybackState oldValue, PlaybackState newValue)>[];
-  final _statusCb =
-      <bool Function(MediaStatus oldValue, MediaStatus newValue)>[];
+  final _eventController = StreamController<MediaEvent>.broadcast();
+  final _stateController = StreamController<PlaybackStateEvent>.broadcast();
+  final _statusController = StreamController<MediaStatusEvent>.broadcast();
+
   Function(double start, double end, List<String> text)? _subtitleCb;
   Future<bool> Function()? _prepareCb;
 

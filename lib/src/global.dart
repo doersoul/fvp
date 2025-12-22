@@ -76,6 +76,14 @@ class MediaStatus {
   }
 }
 
+/// Media status event
+class MediaStatusEvent {
+  final MediaStatus oldValue;
+  final MediaStatus newValue;
+
+  const MediaStatusEvent(this.oldValue, this.newValue);
+}
+
 /// Playback state
 enum PlaybackState {
   notRunning(MDK_State.MDK_State_NotRunning),
@@ -96,6 +104,14 @@ enum PlaybackState {
     ];
     return states[i];
   }
+}
+
+/// Playback state event
+class PlaybackStateEvent {
+  final PlaybackState oldValue;
+  final PlaybackState newValue;
+
+  const PlaybackStateEvent(this.oldValue, this.newValue);
 }
 
 /// https://github.com/wang-bin/mdk-sdk/wiki/Types#enum-seekflag-flags
