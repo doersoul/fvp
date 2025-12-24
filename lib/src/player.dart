@@ -10,18 +10,19 @@ import 'dart:ui' as ui;
 import 'package:ffi/ffi.dart';
 import 'package:flutter/foundation.dart';
 
+import 'extensions.dart';
 import 'fvp_platform_interface.dart';
 import 'generated_bindings.dart';
 import 'global.dart';
-import 'media_info.dart';
 import 'lib.dart';
-import 'extensions.dart';
+import 'media_info.dart';
 
 class Player {
   int get nativeHandle => _player.address;
 
   /// for builder
   final ValueNotifier<int?> textureId = ValueNotifier<int?>(null);
+  final ValueNotifier<ui.Size?> textureSize = ValueNotifier<ui.Size?>(null);
 
   Player() {
     _pp.value = _player;
@@ -136,6 +137,8 @@ class Player {
   void dispose() async {
     if (_pp == nullptr) {
       textureId.dispose();
+      textureSize.dispose();
+      _stopTimer();
       return;
     }
     // await: ensure no player ref in fvp plugin before mdkPlayerAPI_delete() in dart
@@ -146,6 +149,8 @@ class Player {
     _disposeEventListener();
     _disposeStateListener();
     _disposeStatusListener();
+    _positionController.close();
+    _bufferingPercentageController.close();
 
     _receivePort.close();
 
@@ -153,6 +158,8 @@ class Player {
     calloc.free(_pp);
     _pp = nullptr;
     textureId.dispose();
+    textureSize.dispose();
+    _stopTimer();
   }
 
   /// Release current texture then create a new one for current [media], and update [textureId].
@@ -192,8 +199,6 @@ class Player {
     // release texture if width or height <= 0
     return -1;
   }
-
-  Future<ui.Size?> get textureSize => _videoSize.future;
 
   /// Mute the audio or not
   set mute(bool value) {
@@ -359,6 +364,11 @@ class Player {
   // reply: true to let native code wait for dart callback result, may result in dead lock because when native waiting main isolate reply, main isolate may execute another task(e.g. frequent seekTo) which also acquire the same lock in native
   // only the last callback reply parameter works
   Stream<MediaStatusEvent> get statusStream => _statusController.stream;
+
+  Stream<int> get positionStream => _positionController.stream;
+
+  Stream<int> get bufferingPercentageStream =>
+      _bufferingPercentageController.stream;
 
   /// Load the [media] from [position] in milliseconds and decode the first frame, then [state] will be [PlaybackState.paused].
   /// If error occurs, will be [PlaybackState.stopped].
@@ -675,12 +685,13 @@ class Player {
 
   void _initEventListener() {
     eventStream.listen((MediaEvent event) {
-      if (_videoSize.isCompleted) {
-        return;
-      }
-
-      if (event.category == 'decoder.video') {
-        _setVideoSize();
+      final String category = event.category;
+      if ('decoder.video' == category) {
+        if (!_videoSize.isCompleted) {
+          _setVideoSize();
+        }
+      } else if ('reader.buffering' == category) {
+        _bufferingPercentageController.add(event.error);
       }
     });
 
@@ -696,6 +707,12 @@ class Player {
   void _initStateListener() {
     stateStream.listen((PlaybackStateEvent state) {
       _state = state.newValue;
+
+      if (PlaybackState.playing == _state) {
+        _startTimer();
+      } else {
+        _stopTimer();
+      }
     });
 
     Libfvp.registerType(nativeHandle, 1, false);
@@ -776,6 +793,7 @@ class Player {
     }
     final size = ui.Size(w, h);
     _videoSize.complete(size);
+    textureSize.value = size;
   }
 
   Pointer<Void> _getVid() {
@@ -784,6 +802,33 @@ class Player {
       return Libfvp.getVid(textureId.value ?? -1);
     }
     return Pointer.fromAddress(0);
+  }
+
+  void _startTimer() {
+    _stopTimer();
+
+    if (_pp == nullptr) {
+      return;
+    }
+
+    _timer = Timer.periodic(const Duration(milliseconds: 100), (
+      Timer timer,
+    ) async {
+      if (_pp == nullptr) {
+        _stopTimer();
+
+        return;
+      }
+
+      _positionController.add(position);
+    });
+  }
+
+  void _stopTimer() {
+    if (_timer != null) {
+      _timer?.cancel();
+      _timer = null;
+    }
   }
 
   final _player = Libmdk.instance.mdkPlayerAPI_new();
@@ -796,9 +841,13 @@ class Player {
   Completer<int>? _seeked;
   final _receivePort = ReceivePort();
 
+  Timer? _timer;
+
   final _eventController = StreamController<MediaEvent>.broadcast();
   final _stateController = StreamController<PlaybackStateEvent>.broadcast();
   final _statusController = StreamController<MediaStatusEvent>.broadcast();
+  final _positionController = StreamController<int>.broadcast();
+  final _bufferingPercentageController = StreamController<int>.broadcast();
 
   Function(double start, double end, List<String> text)? _subtitleCb;
   Future<bool> Function()? _prepareCb;
