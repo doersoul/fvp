@@ -807,14 +807,14 @@ class Player {
   void _startTimer() {
     _stopTimer();
 
-    if (_pp == nullptr) {
+    if (_pp == nullptr || _live) {
       return;
     }
 
     _timer = Timer.periodic(const Duration(milliseconds: 100), (
       Timer timer,
     ) async {
-      if (_pp == nullptr) {
+      if (_pp == nullptr || _live) {
         _stopTimer();
 
         return;
