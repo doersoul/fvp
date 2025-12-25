@@ -138,7 +138,6 @@ class Player {
     if (_pp == nullptr) {
       textureId.dispose();
       textureSize.dispose();
-      _stopTimer();
       return;
     }
     // await: ensure no player ref in fvp plugin before mdkPlayerAPI_delete() in dart
@@ -152,6 +151,8 @@ class Player {
     _positionController.close();
     _bufferingPercentageController.close();
 
+    _stopTimer();
+
     _receivePort.close();
 
     Libmdk.instance.mdkPlayerAPI_delete(_pp);
@@ -159,7 +160,6 @@ class Player {
     _pp = nullptr;
     textureId.dispose();
     textureSize.dispose();
-    _stopTimer();
   }
 
   /// Release current texture then create a new one for current [media], and update [textureId].
