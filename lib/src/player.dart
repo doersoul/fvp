@@ -708,7 +708,8 @@ class Player {
     stateStream.listen((PlaybackStateEvent state) {
       _state = state.newValue;
 
-      if (PlaybackState.playing == _state) {
+      if (PlaybackState.playing == _state &&
+          PlaybackState.playing != state.oldValue) {
         _startTimer();
       } else {
         _stopTimer();
