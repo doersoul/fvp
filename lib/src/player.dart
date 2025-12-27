@@ -134,6 +134,8 @@ class Player {
 
   /// Release resources
   void dispose() async {
+    _disposed = true;
+
     if (_pp == nullptr) {
       textureId.dispose();
       textureSize.dispose();
@@ -149,7 +151,7 @@ class Player {
     _disposeStateListener();
     _disposeStatusListener();
     _positionController.close();
-    _bufferingPercentageController.close();
+    _bufferPercentController.close();
 
     _stopTimer();
 
@@ -161,6 +163,8 @@ class Player {
     textureId.dispose();
     textureSize.dispose();
   }
+
+  bool get disposed => _disposed;
 
   /// Release current texture then create a new one for current [media], and update [textureId].
   ///
@@ -367,8 +371,7 @@ class Player {
 
   Stream<int> get positionStream => _positionController.stream;
 
-  Stream<int> get bufferingPercentageStream =>
-      _bufferingPercentageController.stream;
+  Stream<int> get bufferPercentStream => _bufferPercentController.stream;
 
   /// Load the [media] from [position] in milliseconds and decode the first frame, then [state] will be [PlaybackState.paused].
   /// If error occurs, will be [PlaybackState.stopped].
@@ -683,6 +686,8 @@ class Player {
     }
   }
 
+  int get bufferPercent => _bufferPercent;
+
   void _initEventListener() {
     eventStream.listen((MediaEvent event) {
       final String category = event.category;
@@ -691,7 +696,8 @@ class Player {
           _setVideoSize();
         }
       } else if ('reader.buffering' == category) {
-        _bufferingPercentageController.add(event.error);
+        _bufferPercent = event.error;
+        _bufferPercentController.add(event.error);
       }
     });
 
@@ -848,10 +854,13 @@ class Player {
   final _stateController = StreamController<PlaybackStateEvent>.broadcast();
   final _statusController = StreamController<MediaStatusEvent>.broadcast();
   final _positionController = StreamController<int>.broadcast();
-  final _bufferingPercentageController = StreamController<int>.broadcast();
+  final _bufferPercentController = StreamController<int>.broadcast();
 
   Function(double start, double end, List<String> text)? _subtitleCb;
   Future<bool> Function()? _prepareCb;
+
+  bool _disposed = false;
+  int _bufferPercent = 0;
 
   bool _mute = false;
   double _volume = 1.0;
