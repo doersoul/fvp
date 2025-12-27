@@ -40,11 +40,10 @@ class _VideoViewInnerState extends State<VideoViewInner> {
   late List<StreamSubscription> _subscriptions;
 
   late bool _playable;
-
   late int _textureId;
   late double _videoWidth;
   late double _videoHeight;
-  late bool _videoRenderStart;
+  late bool _ready;
 
   @override
   void initState() {
@@ -82,7 +81,7 @@ class _VideoViewInnerState extends State<VideoViewInner> {
     _textureId = -1;
     _videoWidth = -1;
     _videoHeight = -1;
-    _videoRenderStart = false;
+    _ready = false;
 
     widget.player.textureId.addListener(_playerListener);
     widget.player.textureSize.addListener(_playerListener);
@@ -103,29 +102,29 @@ class _VideoViewInnerState extends State<VideoViewInner> {
     }
   }
 
-  Future<void> _playerListener([_]) async {
-    _playable = _playable || PlaybackState.playing == widget.player.state;
+  Future<void> _playerListener([dynamic _]) async {
+    _playable = _playable ||
+        PlaybackState.playing == widget.player.state ||
+        widget.player.position > 0;
 
     final int textureId = widget.player.textureId.value ?? -1;
     final Size? size = widget.player.textureSize.value;
     final double videoWidth = size?.width ?? -1;
     final double videoHeight = size?.height ?? -1;
-    final bool ready = _videoRenderStart ||
-        (textureId > -1 && videoWidth > 0 && videoHeight > 0);
 
-    bool videoRenderStart = ready;
+    bool ready = textureId > -1 && videoWidth > 0 && videoHeight > 0;
     if (widget.showCoverFirst) {
-      videoRenderStart = videoRenderStart && _playable;
+      ready = ready && _playable;
     }
 
     if (_textureId != textureId ||
         _videoWidth != videoWidth ||
         _videoHeight != videoHeight ||
-        _videoRenderStart != videoRenderStart) {
+        _ready != ready) {
       _textureId = textureId;
       _videoWidth = videoWidth;
       _videoHeight = videoHeight;
-      _videoRenderStart = videoRenderStart;
+      _ready = ready;
 
       if (mounted) {
         setState(() {});
@@ -271,7 +270,7 @@ class _VideoViewInnerState extends State<VideoViewInner> {
           stack.add(background);
         }
 
-        if (!_videoRenderStart) {
+        if (!_ready) {
           final Widget? cover = widget.coverBuilder?.call(ctx, widget.fit);
           if (cover != null) {
             stack.add(
