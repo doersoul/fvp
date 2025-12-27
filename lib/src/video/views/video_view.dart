@@ -1,9 +1,9 @@
 import 'package:flutter/material.dart';
 import 'package:fvp/src/player.dart';
-import 'package:fvp/video/models/value_observer.dart';
-import 'package:fvp/video/models/video_fit.dart';
-import 'package:fvp/video/utils/orientation_utils.dart';
-import 'package:fvp/video/views/video_view_inner.dart';
+import 'package:fvp/src/video/models/value_observer.dart';
+import 'package:fvp/src/video/models/video_fit.dart';
+import 'package:fvp/src/video/utils/orientation_utils.dart';
+import 'package:fvp/src/video/views/video_view_inner.dart';
 
 typedef VideoCoverBuilder = Widget Function(BuildContext context, VideoFit fit);
 

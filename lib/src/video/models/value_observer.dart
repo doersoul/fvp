@@ -1,5 +1,5 @@
 import 'package:flutter/foundation.dart';
-import 'package:fvp/video/models/property_value_notifier.dart';
+import 'package:fvp/src/video/models/property_value_notifier.dart';
 
 class ValueObserver<T> {
   final PropertyValueNotifier<T> _value;

@@ -4,9 +4,9 @@ import 'dart:math';
 import 'package:flutter/widgets.dart';
 import 'package:fvp/src/global.dart';
 import 'package:fvp/src/player.dart';
-import 'package:fvp/video/models/value_observer.dart';
-import 'package:fvp/video/models/video_fit.dart';
-import 'package:fvp/video/views/video_view.dart';
+import 'package:fvp/src/video/models/value_observer.dart';
+import 'package:fvp/src/video/models/video_fit.dart';
+import 'package:fvp/src/video/views/video_view.dart';
 
 class VideoViewInner extends StatefulWidget {
   final VideoViewState state;
