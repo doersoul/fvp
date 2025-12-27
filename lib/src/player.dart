@@ -848,7 +848,8 @@ class Player {
   Completer<int>? _seeked;
   final _receivePort = ReceivePort();
 
-  Timer? _timer;
+  Function(double start, double end, List<String> text)? _subtitleCb;
+  Future<bool> Function()? _prepareCb;
 
   final _eventController = StreamController<MediaEvent>.broadcast();
   final _stateController = StreamController<PlaybackStateEvent>.broadcast();
@@ -856,8 +857,7 @@ class Player {
   final _positionController = StreamController<int>.broadcast();
   final _bufferPercentController = StreamController<int>.broadcast();
 
-  Function(double start, double end, List<String> text)? _subtitleCb;
-  Future<bool> Function()? _prepareCb;
+  Timer? _timer;
 
   bool _disposed = false;
   int _bufferPercent = 0;
