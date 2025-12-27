@@ -5,3 +5,6 @@
 export 'src/global.dart';
 export 'src/media_info.dart';
 export 'src/player.dart';
+
+export 'video/models/video_fit.dart';
+export 'video/views/video_view.dart';

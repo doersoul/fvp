@@ -37,9 +37,8 @@ class Player {
             final error = message[1] as int;
             final category = message[2] as String;
             final detail = message[3] as String;
-            final ev = MediaEvent(error, category, detail);
 
-            _eventController.add(ev);
+            _eventController.add(MediaEvent(error, category, detail));
           }
         case 1:
           {
@@ -140,6 +139,7 @@ class Player {
       textureSize.dispose();
       return;
     }
+
     // await: ensure no player ref in fvp plugin before mdkPlayerAPI_delete() in dart
     await updateTexture(width: -1);
     state = PlaybackState.stopped;
